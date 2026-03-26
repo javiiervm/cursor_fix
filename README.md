@@ -1,14 +1,14 @@
 <div align="center">
+  <h1>Hackintosh macOS Custom Cursor Fix</h1>
   <p>
-    <h1>Hackintosh macOS Custom Cursor Fix</h1>
-    <img src="https://img.shields.io/github/last-commit/javiiervm/cursor_fix/main" alt="Last Commit" />
-    <img src="https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macos-lightgrey" alt="Platform Support" />
-    <img src="https://img.shields.io/github/issues/javiiervm/cursor_fix?branch=main" alt="Issues" />
-    <img src="https://img.shields.io/github/stars/javiiervm/cursor_fix?branch=main" alt="Stars" />
-    <br />
+    <img src="https://img.shields.io/github/last-commit/javiiervm/cursor_fix?color=blue" alt="Last Commit" />
+    <img src="https://img.shields.io/badge/platform-macOS%20Monterey%2B-lightgrey" alt="Platform Support" />
     <img src="https://img.shields.io/badge/python-3.10%2B-yellow" alt="Python Version" />
+    <img src="https://img.shields.io/github/issues/javiiervm/cursor_fix" alt="Issues" />
+    <img src="https://img.shields.io/github/stars/javiiervm/cursor_fix" alt="Stars" />
   </p>
-</div><br />
+</div>
+<br />
 
 A custom, smooth, and smart software cursor designed specifically to solve the "hardware cursor glitch" on Hackintosh systems running macOS Monterey or higher.
 
