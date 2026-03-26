@@ -1,0 +1,2 @@
+pyobjc>=9.0
+pyobjc-framework-ApplicationServices>=9.0
