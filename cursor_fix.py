@@ -3,14 +3,30 @@ import Quartz
 import objc
 import signal
 import ApplicationServices
+import threading
+import time
 from Foundation import NSTimer, NSMakePoint, NSMakeRect, NSSize
 
 SIZE = 12
 HALF_SIZE = SIZE / 2
 
+# --- GLOBAL STATE FOR THREAD COMMUNICATION ---
+app_running = True
+is_interactive_global = False
+last_interactive_global = False
+
 # --- 1. APP AND WINDOW CONFIGURATION ---
 app = AppKit.NSApplication.sharedApplication()
 app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+
+# Prevent App Nap and request maximum responsiveness
+process_info = AppKit.NSProcessInfo.processInfo()
+activity_options = (
+    AppKit.NSActivityUserInitiated | 
+    AppKit.NSActivityLatencyCritical
+)
+activity_reason = "Critical UI element (Hardware Cursor Replacement)"
+process_info.beginActivityWithOptions_reason_(activity_options, activity_reason)
 
 img = AppKit.NSImage.alloc().initWithSize_(NSSize(1, 1))
 img.lockFocus()
@@ -29,7 +45,8 @@ win = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
 win.setBackgroundColor_(AppKit.NSColor.clearColor())
 win.setOpaque_(False)
 win.setIgnoresMouseEvents_(True)
-win.setLevel_(AppKit.NSScreenSaverWindowLevel)
+# Elevate window level to cursor level so it stays on top of system dialogs
+win.setLevel_(Quartz.CGWindowLevelForKey(Quartz.kCGCursorWindowLevelKey))
 win.setCollectionBehavior_(
     AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
     AppKit.NSWindowCollectionBehaviorStationary |
@@ -57,107 +74,118 @@ view.layer().addSublayer_(gradient)
 win.orderFrontRegardless()
 
 def exit_app(signum, frame):
+    global app_running
+    app_running = False
     AppKit.NSCursor.pop()
     app.terminate_(None)
 
 signal.signal(signal.SIGINT, exit_app)
 
-# --- 3. ADVANCED TICKER LOGIC ---
-class Ticker(AppKit.NSObject):
-    def init(self):
-        self = objc.super(Ticker, self).init()
-        self.frame_count = 0
-        self.system_wide = ApplicationServices.AXUIElementCreateSystemWide()
-        return self
+# --- 3. BACKGROUND THREAD (THE DETECTIVE) ---
+def hover_logic_thread():
+    global is_interactive_global
+    system_wide = ApplicationServices.AXUIElementCreateSystemWide()
+    
+    while app_running:
+        # NSAutoreleasePool prevents memory leaks in background threads in PyObjC
+        pool = AppKit.NSAutoreleasePool.alloc().init()
+        try:
+            cg_event = Quartz.CGEventCreate(None)
+            cg_loc = Quartz.CGEventGetLocation(cg_event)
+            is_interactive_local = False
 
+            # --- A. CHECK BUTTONS AND TEXT (Accessibility) ---
+            err, element = ApplicationServices.AXUIElementCopyElementAtPosition(
+                system_wide, cg_loc.x, cg_loc.y, None
+            )
+
+            if err == 0 and element:
+                err, role = ApplicationServices.AXUIElementCopyAttributeValue(
+                    element, 'AXRole', None
+                )
+                if err == 0:
+                    interactive_roles = [
+                        'AXButton', 'AXLink', 'AXPopUpButton', 'AXSlider',
+                        'AXMenuItem', 'AXSplitGroup', 'AXTextField', 'AXTextArea',
+                        'AXCheckBox', 'AXRadioButton', 'AXComboBox'
+                    ]
+                    if role in interactive_roles:
+                        is_interactive_local = True
+
+            # --- B. CHECK WINDOW BORDERS (CoreGraphics Geometry) ---
+            if not is_interactive_local:
+                MARGIN = 6
+                window_list = Quartz.CGWindowListCopyWindowInfo(
+                    Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+                    Quartz.kCGNullWindowID
+                )
+                
+                if window_list:
+                    for window in window_list:
+                        if window.get('kCGWindowLayer', 0) != 0:
+                            continue
+                            
+                        bounds = window.get('kCGWindowBounds')
+                        if not bounds:
+                            continue
+                            
+                        x = bounds.get('X', 0)
+                        y = bounds.get('Y', 0)
+                        w = bounds.get('Width', 0)
+                        h = bounds.get('Height', 0)
+                        
+                        if w < 50 or h < 50 or window.get('kCGWindowAlpha', 1.0) == 0.0:
+                            continue
+                        
+                        in_total_area = (x - MARGIN) <= cg_loc.x <= (x + w + MARGIN) and \
+                                        (y - MARGIN) <= cg_loc.y <= (y + h + MARGIN)
+                                        
+                        in_inner_area = (x + MARGIN) < cg_loc.x < (x + w - MARGIN) and \
+                                        (y + MARGIN) < cg_loc.y < (y + h - MARGIN)
+                        
+                        if in_total_area:
+                            if in_inner_area:
+                                break
+                            else:
+                                is_interactive_local = True
+                                break
+            
+            # Update global state
+            is_interactive_global = is_interactive_local
+            
+        finally:
+            # Clean up memory for this loop iteration
+            del pool
+            
+        # Run this check 20 times per second (0.05s). Fast enough for UI, light on CPU.
+        time.sleep(0.05)
+
+# Start the background thread
+logic_thread = threading.Thread(target=hover_logic_thread)
+logic_thread.daemon = True # Ensures the thread dies when the main app closes
+logic_thread.start()
+
+# --- 4. MAIN THREAD (THE RENDERER) ---
+class Ticker(AppKit.NSObject):
     def tick_(self, timer):
-        # Move the cursor window
+        # 1. Update Position INSTANTLY (Never blocked)
         loc = AppKit.NSEvent.mouseLocation()
         win.setFrameOrigin_(NSMakePoint(loc.x - HALF_SIZE, loc.y - HALF_SIZE))
 
-        # Check the element under the cursor 1 out of every 10 frames
-        self.frame_count += 1
-        if self.frame_count % 10 == 0:
-            self.check_element_under_mouse()
-
-    def check_element_under_mouse(self):
-        cg_event = Quartz.CGEventCreate(None)
-        cg_loc = Quartz.CGEventGetLocation(cg_event)
-        is_interactive = False
-
-        # --- A. CHECK BUTTONS AND TEXT (Accessibility) ---
-        err, element = ApplicationServices.AXUIElementCopyElementAtPosition(
-            self.system_wide, cg_loc.x, cg_loc.y, None
-        )
-
-        if err == 0 and element:
-            err, role = ApplicationServices.AXUIElementCopyAttributeValue(
-                element, 'AXRole', None
-            )
-            if err == 0:
-                interactive_roles = [
-                    'AXButton', 'AXLink', 'AXPopUpButton', 'AXSlider',
-                    'AXMenuItem', 'AXSplitGroup', 'AXTextField', 'AXTextArea',
-                    'AXCheckBox', 'AXRadioButton', 'AXComboBox'
-                ]
-                if role in interactive_roles:
-                    is_interactive = True
-
-        # --- B. CHECK WINDOW BORDERS (CoreGraphics Geometry) ---
-        if not is_interactive:
-            MARGIN = 6 # Invisible border thickness in pixels
-            
-            # Get windows ordered from front to back
-            window_list = Quartz.CGWindowListCopyWindowInfo(
-                Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-                Quartz.kCGNullWindowID
-            )
-            
-            for window in window_list:
-                # Filter only normal windows (usually Layer 0)
-                if window.get('kCGWindowLayer', 0) != 0:
-                    continue
-                    
-                bounds = window.get('kCGWindowBounds')
-                if not bounds:
-                    continue
-                    
-                x = bounds.get('X', 0)
-                y = bounds.get('Y', 0)
-                w = bounds.get('Width', 0)
-                h = bounds.get('Height', 0)
-                
-                # Ignore very small or invisible windows
-                if w < 50 or h < 50 or window.get('kCGWindowAlpha', 1.0) == 0.0:
-                    continue
-                
-                # Geometry: check if we are in a "ring" around the window
-                in_total_area = (x - MARGIN) <= cg_loc.x <= (x + w + MARGIN) and \
-                                (y - MARGIN) <= cg_loc.y <= (y + h + MARGIN)
-                                
-                in_inner_area = (x + MARGIN) < cg_loc.x < (x + w - MARGIN) and \
-                                (y + MARGIN) < cg_loc.y < (y + h - MARGIN)
-                
-                if in_total_area:
-                    if in_inner_area:
-                        # The mouse is inside a front window.
-                        # Stop searching to avoid detecting borders of hidden windows underneath.
-                        break
-                    else:
-                        # It is in the window area, but NOT inside: It's on the border!
-                        is_interactive = True
-                        break
-
-        # --- C. APPLY COLORS INSTANTLY ---
-        Quartz.CATransaction.begin()
-        Quartz.CATransaction.setDisableActions_(True)
-        if is_interactive:
-            gradient.setColors_([white, dark_blue])
-        else:
-            gradient.setColors_([white, cyan])
-        Quartz.CATransaction.commit()
+        # 2. Update Color ONLY if the background thread changed the state
+        global is_interactive_global, last_interactive_global
+        if is_interactive_global != last_interactive_global:
+            Quartz.CATransaction.begin()
+            Quartz.CATransaction.setDisableActions_(True)
+            if is_interactive_global:
+                gradient.setColors_([white, dark_blue])
+            else:
+                gradient.setColors_([white, cyan])
+            Quartz.CATransaction.commit()
+            last_interactive_global = is_interactive_global
 
 ticker = Ticker.alloc().init()
+# Run rendering at 120 FPS
 NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
     1.0/120.0, ticker, 'tick:', None, True)
 
