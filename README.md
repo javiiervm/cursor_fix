@@ -12,12 +12,12 @@
 
 A custom, smooth, and smart software cursor designed specifically to solve the "hardware cursor glitch" on Hackintosh systems running macOS Monterey or higher.
 
-Instead of relying on the native GPU-drawn cursor, this project replaces it with fully customizable, software-rendered `.png` images (built with Python + PyObjC). It runs flawlessly at 120Hz without lag—even under extreme CPU stress—and intelligently reacts to the environment, instantly swapping cursor shapes when hovering over interactive UI elements or window borders.
+Instead of relying on the native GPU-drawn cursor, this project replaces it with fully customizable, software-rendered `.png` images (built with Python + PyObjC). It runs flawlessly at 120Hz without lag—even under extreme CPU stress—and intelligently reacts to the environment, instantly swapping cursor shapes when hovering over interactive UI elements, text fields, or window borders.
 
 ## Features
 
 * **Extreme Anti-Lag & Multithreading:** Separates the geometry logic from the rendering engine. The main graphics thread runs at an uninterrupted 120 FPS bound to `NSRunLoopCommonModes`, ensuring zero lag even during heavy system loads.
-* **Smart Hover:** Uses the macOS Accessibility API and CoreGraphics to detect buttons, links, text fields, and invisible window borders, instantly swapping the cursor image to match the context (Arrow, Hand, or Cell).
+* **Smart Hover:** Uses the macOS Accessibility API and CoreGraphics to detect buttons, links, text fields, and invisible window borders, instantly swapping the cursor image to match the context (Arrow, Hand, Cell, or Text I-Beam).
 * **Fully Customizable Cursors:** Uses standard 32x32 `.png` files with configurable mathematical "hotspots," allowing pixel-perfect precision whether you use native macOS extracted cursors or custom designs.
 * **App Nap Immune:** Configured at the system level as a critical user interface process (with persistent activity tokens) to prevent macOS from suspending the Python thread to save battery.
 * **Persistent Auto-Start:** Integrated with `launchd` so it starts automatically upon login and instantly revives itself if the process ever crashes.
@@ -38,10 +38,11 @@ cd ~/Path/To/Your/Folder
 pip3 install -r requirements.txt
 ```
 
-**IMPORTANT:** Before running the script, ensure you have three transparent-background `.png` images (ideally 32x32 pixels) placed in the exact same directory as `cursor_fix.py`:
+**IMPORTANT:** Before running the script, ensure you have these four transparent-background `.png` images (ideally 32x32 pixels) placed in the exact same directory as `cursor_fix.py`:
 * `default.png` (The standard arrow pointer)
 * `hand.png` (The pointing hand for links and buttons)
-* `cell.png` (The cursor for text inputs and window resizing)
+* `textcursor.png` (The I-Beam cursor for text inputs)
+* `cell.png` (The cursor for any other situation)
 
 ### Step 2: Hide the glitched native cursor
 To prevent the hardware cursor from flickering beneath our new Python cursor, we need to make it completely transparent at the system level.
