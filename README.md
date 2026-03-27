@@ -12,13 +12,14 @@
 
 A custom, smooth, and smart software cursor designed specifically to solve the "hardware cursor glitch" on Hackintosh systems running macOS Monterey or higher.
 
-Instead of relying on the native GPU-drawn cursor, this project replaces it with a minimalist, software-rendered dot (built with Python + PyObjC). It runs flawlessly at 120Hz without lag and intelligently reacts (changes color) when hovering over interactive UI elements or window resizing borders.
+Instead of relying on the native GPU-drawn cursor, this project replaces it with fully customizable, software-rendered `.png` images (built with Python + PyObjC). It runs flawlessly at 120Hz without lag—even under extreme CPU stress—and intelligently reacts to the environment, instantly swapping cursor shapes when hovering over interactive UI elements or window borders.
 
 ## Features
 
-* **Multithreading:** Separates the geometry logic from the rendering engine. The main graphics thread runs at an uninterrupted 120 FPS, while a lightweight background thread scans the screen for interactions.
-* **Smart Hover:** Uses the macOS Accessibility API and CoreGraphics to detect buttons, links, text fields, and invisible window borders, changing the cursor's color instantly.
-* **App Nap Immune:** Configured at the system level as a critical user interface process to prevent macOS from suspending the Python thread to save battery.
+* **Extreme Anti-Lag & Multithreading:** Separates the geometry logic from the rendering engine. The main graphics thread runs at an uninterrupted 120 FPS bound to `NSRunLoopCommonModes`, ensuring zero lag even during heavy system loads.
+* **Smart Hover:** Uses the macOS Accessibility API and CoreGraphics to detect buttons, links, text fields, and invisible window borders, instantly swapping the cursor image to match the context (Arrow, Hand, or Cell).
+* **Fully Customizable Cursors:** Uses standard 32x32 `.png` files with configurable mathematical "hotspots," allowing pixel-perfect precision whether you use native macOS extracted cursors or custom designs.
+* **App Nap Immune:** Configured at the system level as a critical user interface process (with persistent activity tokens) to prevent macOS from suspending the Python thread to save battery.
 * **Persistent Auto-Start:** Integrated with `launchd` so it starts automatically upon login and instantly revives itself if the process ever crashes.
 
 ## Prerequisites
@@ -29,7 +30,7 @@ Instead of relying on the native GPU-drawn cursor, this project replaces it with
 
 ## Installation
 
-### Step 1: Clone the repository & install dependencies
+### Step 1: Clone the repository & prepare your cursors
 Clone this repository or download the files into a safe, permanent folder in your user directory (e.g., `~/Scripts/CursorFix/`).
 
 ```bash
@@ -37,15 +38,21 @@ cd ~/Path/To/Your/Folder
 pip3 install -r requirements.txt
 ```
 
+**IMPORTANT:** Before running the script, ensure you have three transparent-background `.png` images (ideally 32x32 pixels) placed in the exact same directory as `cursor_fix.py`:
+* `default.png` (The standard arrow pointer)
+* `hand.png` (The pointing hand for links and buttons)
+* `cell.png` (The cursor for text inputs and window resizing)
+
 ### Step 2: Hide the glitched native cursor
 To prevent the hardware cursor from flickering beneath our new Python cursor, we need to make it completely transparent at the system level.
 
 1. Download and install [Mousecape](https://github.com/alexzielenski/Mousecape).
 2. Run the included `crear_png.py` script to generate a 1x1 transparent PNG on your desktop (or use your own).
 3. Open Mousecape, press `Cmd + N` to create a new cape, right-click it, and select **Edit**.
-4. Add two cursors by clicking the `+` button at the bottom left:
-   * Type: **Arrow** (Standard pointer). Drag the transparent PNG into the image box and set the Hot Spot to `0, 0`.
-   * Type: **Pointing Hand** (For links and the Dock). Drag the exact same transparent PNG into the image box and set the Hot Spot to `0, 0`.
+4. Add cursors by clicking the `+` button at the bottom left. You should at least add these types, dragging the transparent PNG into the image box and setting the Hot Spot to `0, 0` for each:
+   * **Arrow** (Standard pointer)
+   * **Pointing Hand** (For links and the Dock)
+   * *(Optional but recommended)* **I-Beam** and **Resize** cursors, to prevent the native glitched cursor from bleeding through when the OS forces a state change.
 5. Close the edit window and double-click your new cape in the main Mousecape list to apply it.
 
 ### Step 3: Configure the daemon (Auto-start)
@@ -85,4 +92,4 @@ Due to macOS's strict security architecture (Sandboxing), it is **impossible** f
 
 When macOS prompts you for your administrator password to install a program, or when you are on the lock/login screen, the Python cursor will temporarily disappear. This is an intended security feature of macOS to prevent clickjacking.
 
-Also, the glitchy cursor can still appear briefly when performing certain actions.
+Also, the glitchy native cursor can still appear briefly when performing certain core system actions if those specific cursor states haven't been masked in Mousecape.
