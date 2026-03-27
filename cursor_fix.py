@@ -13,9 +13,10 @@ CURSOR_SIZE = 32
 
 # Define states, filenames, and their precise click points (Hotspots) from Top-Left.
 CURSORS = {
-    'ARROW':  {'file': 'default.png', 'hotspot': (10, 10)},
-    'HAND':   {'file': 'hand.png',    'hotspot': (12, 10)}, 
-    'CELL':   {'file': 'cell.png',    'hotspot': (16, 16)}
+    'ARROW':  {'file': 'default.png',    'hotspot': (10, 10)},
+    'HAND':   {'file': 'hand.png',       'hotspot': (12, 10)}, 
+    'CELL':   {'file': 'cell.png',       'hotspot': (16, 16)},
+    'TEXT':   {'file': 'textcursor.png', 'hotspot': (16, 16)}
 }
 
 # --- GLOBAL STATE ---
@@ -41,8 +42,7 @@ for state, data in CURSORS.items():
 app = AppKit.NSApplication.sharedApplication()
 app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
 
-# ANTI-LAG FIX 1: Store the activity token in a global variable.
-# If it gets garbage collected, macOS will suspend the app during heavy loads.
+# Anti-lag fix: Keep reference to activity token
 process_info = AppKit.NSProcessInfo.processInfo()
 activity_token = process_info.beginActivityWithOptions_reason_(
     AppKit.NSActivityUserInitiated | AppKit.NSActivityLatencyCritical, 
@@ -114,13 +114,20 @@ def hover_logic_thread():
                         'AXButton', 'AXLink', 'AXPopUpButton', 
                         'AXMenuItem', 'AXCheckBox', 'AXRadioButton'
                     ]
+                    
+                    text_roles = [
+                        'AXTextField', 'AXTextArea'
+                    ]
+                    
                     cell_roles = [
-                        'AXTextField', 'AXTextArea', 'AXSplitGroup', 
-                        'AXSlider', 'AXComboBox', 'AXValueIndicator'
+                        'AXSplitGroup', 'AXSlider', 'AXComboBox', 'AXValueIndicator'
                     ]
                     
                     if role in hand_roles:
                         detected_state = 'HAND'
+                        is_special_state = True
+                    elif role in text_roles:
+                        detected_state = 'TEXT'
                         is_special_state = True
                     elif role in cell_roles:
                         detected_state = 'CELL'
@@ -193,8 +200,7 @@ class Ticker(AppKit.NSObject):
 
 ticker = Ticker.alloc().init()
 
-# ANTI-LAG FIX 2: Create the timer but add it to CommonModes instead of DefaultMode.
-# This ensures 120Hz tracking even if the CPU is busy or OS menus are open.
+# Anti-lag fix: Bind to CommonModes
 timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
     1.0/120.0, ticker, 'tick:', None, True)
 AppKit.NSRunLoop.currentRunLoop().addTimer_forMode_(timer, AppKit.NSRunLoopCommonModes)
@@ -202,6 +208,5 @@ AppKit.NSRunLoop.currentRunLoop().addTimer_forMode_(timer, AppKit.NSRunLoopCommo
 print("Software Cursor Active. Press Ctrl+C to exit.")
 app.run()
 
-# Keep a reference to the token until the app closes
 del activity_token
 AppKit.NSCursor.pop()
